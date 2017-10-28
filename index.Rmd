@@ -1,0 +1,222 @@
+---
+title: "Startups-An EDA"
+author: "Deepak Kumar G S"
+date: "October 25, 2017"
+output:
+
+  html_document:
+    df_print: paged
+    toc: yes
+    code_folding: hide
+    
+    
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning=FALSE,message=FALSE)
+```
+
+
+# Introduction:
+
+* This dataset contains information on startup name,industry vertical,location,investors of the startup etc.
+
+* We try to understand the dataset by answering questions like which startup is funded the most,which is the prefered industry verical for investors,which city are startups prefering etc..
+
+# Loading the required libraries,data and glimpse into the dataset:
+
+```{r}
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(ggthemes)
+library(knitr)
+library(kableExtra)
+library(cowplot)
+library(tidyr)
+library(stringr)
+library(zoo)
+library(splitstackshape)
+library(viridis)
+library(ggrepel)
+library(forcats)
+star=read.csv("startup_funding.csv",header=TRUE,stringsAsFactors = FALSE)
+glimpse(star)
+summary(star)
+```
+
+
+# Which year has seen more fundings?
+
+```{r,fig.height=7,fig.width=7}
+
+star$Date=as.POSIXct(strptime(star$Date,format="%d/%m/%Y")) # converting into date format 
+star$Month=as.factor(format(star$Date,"%m"))
+star$Year=as.factor(format(star$Date,"%Y"))
+star$Monyr=paste(star$Year,star$Month,sep="-")
+temp= star %>% group_by(Monyr) %>% summarise(Investments=n())  # count by month,year
+p=ggplot(temp,aes(Monyr,Investments,group=1))+geom_line(color="red",size=1)+theme_dark(base_size=8)+labs(x="Year and Month of Investment",y="Total Investment Count",title="Investment trend over the years")+theme(axis.title=element_text(color="red",family="sans",size=12),axis.text.x = element_text(angle=90,vjust=0.5))# Plot of the year,month trend
+#Quaterly trend:
+star$Qtr=as.yearqtr(star$Date,format="%y-Q%q")
+temp=star %>% group_by(Qtr) %>% summarise(Investment=n()) %>% drop_na(Qtr)
+q=ggplot(temp,aes(Qtr,Investment,group=1))+geom_line(color="blue",size=1)+theme_dark(base_size=8)+labs(x="Year and Quarter",y="Total Investment Count",title="Investment trend over the Quarter")+theme(axis.title=element_text(color="red",family="sans",size=12),axis.text.x = element_text(angle=90,vjust=0.5))+scale_x_yearqtr(format="%Y-Q%q")
+plot_grid(p,q,ncol=1)
+```
+
+
+There is a sharp increase in investment climate after June 2015.Investments have declined sharply during Feb,March of 2017.This is definitely a sharp drop in investments witnessed in Q3 of 2016.
+
+
+
+# Trend of Quarterly Funding:
+
+```{r}
+star$AmountInUSD=as.numeric(gsub(",","",star$AmountInUSD)) #Changed from char to numeric and removed comma
+temp=ddply(star,.(Qtr),summarise,TotalInvestments=sum(AmountInUSD,na.rm=TRUE))
+temp%>% drop_na(Qtr) %>% ggplot(aes(Qtr,TotalInvestments,fill=TotalInvestments))+geom_bar(stat="identity")+labs(x="Quater",y="Total Investment in $",title="Trend of Quarterly Funding")+theme(axis.text.x=element_text(angle=90),legend.position="none")+scale_x_yearqtr(format="%Y-Q%q")+scale_fill_viridis(discrete = FALSE)+scale_y_continuous(labels=scales::comma)
+
+```
+
+The 2015 Q3 was a mammoth quarter and has seen a total funding of around $4 billion .There has been a downhill in funding activities from Q4 of 2015 till Q3 of 2016.Q1 of 2017 has been a recovery.
+
+# Breakdown of Investment Locations:
+
+```{r}
+
+temp=star %>% select(CityLocation) %>% group_by(CityLocation) %>% summarise(count=n()) %>% mutate(perc=round((count/sum(count))*100)) %>% arrange(desc(count)) # Top 10 Cities
+temp[temp==""]="CityNotpublished" # replace blank with this 
+temp$perc=paste(temp$perc,"%") # add % to the column
+ggplot(head(temp,10),aes(reorder(CityLocation,count),count,fill=CityLocation))+geom_bar(stat="identity")+theme(legend.position="none",axis.text.x = element_text(angle=90,vjust=0.5))+labs(x="",y="Count of Startups",title="Preferred Investment Locations")+geom_label(aes(label=perc))+coord_flip() # visualise along with %
+```
+
+26 % of the startups find Bangalore for starting their venture followed by Mumbai and New Delhi.
+
+# Breakdown of Industry Vertical:
+
+```{r,fig.width=8,fig.height=8}
+star$IndustryVertical=tolower(star$IndustryVertical)
+star$IndustryVertical[star$IndustryVertical==""]="Uncategorized"
+temp=star %>% select(IndustryVertical) %>% group_by(IndustryVertical) %>% drop_na(IndustryVertical)%>% summarise(count=n()) %>% mutate(perc=(count/sum(count))*100) %>% arrange(desc(count))#finding percentage and count
+temp$ymax=cumsum(temp$perc) #for donut
+temp$ymin=c(0,head(temp$ymax,n=-1))
+temp$IndustryVertical=factor(temp$IndustryVertical,levels=temp$IndustryVertical)
+ggplot(head(temp,10),aes(fill=IndustryVertical,ymax=ymax,ymin=ymin,xmax=10,xmin=5))+geom_rect(color="black")+coord_polar(theta="y")+xlim(c(0,15))+geom_label_repel(aes(label=paste(round(perc),"%"),x=7,y=(ymax+ymin)/2),inherit.aes=TRUE,show.legend=FALSE)+theme(panel.grid = element_blank(),axis.text = element_blank(),axis.ticks = element_blank(),legend.position="right",axis.title=element_blank()) +annotate("text", x = 0, y = 0 ,label = "Industry Vertical")+labs(fill="IndustrySegment")+guides(fill=guide_legend(keywidth=1,keyheight=1))
+```
+
+
+Consumer Internet is the prefered model of business for 33 % of the startups followed by technology and e commerce. 
+
+
+# Breakdown of Investment Type:
+
+```{r}
+unique(star$InvestmentType)
+```
+
+There seems to be duplicate values and we need to clean it a bit.For eg.CrowdFunding and Crowd Funding are same but it is interpreted differently.Lets clean it and resummarise.
+
+```{r}
+star$InvestmentType=as.factor(star$InvestmentType)
+star=star %>% mutate(InvestmentType=fct_collapse(InvestmentType,"PrivateEquity"=c("PrivateEquity","Private Equity"),"SeedFunding"=c("SeedFunding","Seed Funding"),"CrowdFunding"=c("Crowd Funding","Crowd funding")))#rename factor
+temp = star %>% group_by(InvestmentType)%>% summarise(count=n()) %>% mutate(perc=(round(count/sum(count)*100,2))) %>% arrange(desc(count))
+
+ggplot(temp,aes(InvestmentType,perc,fill=InvestmentType)) +geom_bar(stat="identity")+theme(legend.position="none",axis.text.x = element_text(angle=90,vjust=0.5))+labs(x="",y="Percentage",title="Investment Type")+geom_label(aes(label=perc))+coord_flip()
+  
+```
+
+
+ More than 54 % of the investors have seed funded the startups while 45 % of them are through private equity.
+ 
+# Which startup has investors confidence ?
+
+```{r}
+temp=star %>% select(StartupName,InvestorsName,AmountInUSD) %>% ddply(.(StartupName),summarise,sum=sum(AmountInUSD)) %>% arrange(desc(sum))
+kable(head(temp,25),"html") %>% kable_styling("striped",full_width=T) %>% column_spec(1:2,bold=T,background="white") %>% row_spec(c(1,2,3,5,6,24,25),bold=F,color="white",background="#ffb6c1")
+```
+
+
+An birdseye view of the data indicates that the startup variable requires some cleaning.We try to remove .com,in from the variable and combine certain rows since they represent the same company.
+
+```{r}
+star$StartupName=sapply(strsplit(star$StartupName,split=".com",fixed=TRUE),function(x)(x[1]))
+star$StartupName=sapply(strsplit(star$StartupName,split=".in",fixed=TRUE),function(x)(x[1]))
+star$StartupName=sapply(strsplit(star$StartupName,split=".co",fixed=TRUE),function(x)(x[1]))
+star$StartupName=as.factor(star$StartupName)
+star =star %>% mutate(StartupName=fct_collapse(StartupName,"Oyo"=c("Oyo","Oyorooms","Oyo Rooms","OyoRooms"),"Ola"=c("Ola","Olacabs","Ola Cabs")))
+temp=star %>% select(StartupName,InvestorsName,AmountInUSD) %>% ddply(.(StartupName),summarise,sum=sum(AmountInUSD)) %>% arrange(desc(sum))
+#Top 10 
+ggplot(head(temp,10),aes(reorder(StartupName,sum),sum,fill=StartupName))+geom_bar(stat="identity")+theme(legend.position="none",axis.text.x = element_text(angle=90,vjust=0.5),plot.title=element_text(color="blue",size=10,face="italic"))+labs(x="",y="Total Investment",title="Investors High Valued Startups")+coord_flip()+scale_y_continuous(labels=scales::comma)
+```
+
+
+# Top Investors:
+
+To find out the top investors,we need to split the investor name column so that each column consists of 1 investor name instead of several investors.The *splitstackshape* package comes in handy for this scenerio since the number of colums to be split is not known because there are unequal number of investors for each startup.We use the cSplit function to split the columns.
+
+```{r,fig.width=7,fig.height=9}
+star=cSplit(star,"InvestorsName",sep=",",direction="long",drop=FALSE)
+temp=ddply(star,.(InvestorsName),summarise,count=n(),TotalInvestment=sum(AmountInUSD))
+temp=temp %>% arrange(desc(TotalInvestment)) %>% drop_na(TotalInvestment)
+p=ggplot(head(temp,10),aes(reorder(InvestorsName,TotalInvestment),TotalInvestment,fill=InvestorsName))+geom_bar(stat="identity")+theme(legend.position="none",axis.text.x = element_text(angle=90,vjust=0.5),plot.title=element_text(color="blue",size=15,face="bold",hjust=0.5))+labs(x="",y="Total Investment",title="Giant Investors !!!")+coord_flip()+scale_y_continuous(labels=scales::comma)
+
+#Trend of Unique Investors
+temp=star %>% select(Qtr,InvestorsName) %>% group_by(Qtr) %>% drop_na(Qtr)%>% mutate(count=length(unique(InvestorsName)))
+q=ggplot(temp[(!duplicated(c("Qtr","count"))),],aes(Qtr,count))+geom_line(color="red",size=1)+scale_x_yearqtr(format="%Y-Q%q")+theme(legend.position="none",axis.text.x = element_text(angle=90,vjust=0.5),plot.title=element_text(color="blue",size=15,face="bold",hjust=0.5))+labs(x="",y="",title="Trend of Unique Investors")
+plot_grid(p,q,align='v',ncol=1)
+```
+
+
+Investor funding took an increase with more than 400+ unique investors entering into startup ecosystem in Q1 of 2016 which has shown a declining trend since then.
+
+We select the top 5 investors to know in which startups they have pumped their investments.
+
+# Investor Funding{.tabset}
+
+## Softbank Group 
+
+```{r,fig.align="center"}
+temp= star %>% filter(InvestorsName=="SoftBank Group" | InvestorsName=="Softbank") %>% select(Qtr,StartupName,AmountInUSD) %>% ddply(.(Qtr,StartupName),summarise,TotalInvestment=sum(AmountInUSD))
+ggplot(temp,aes(x=StartupName,y=TotalInvestment,fill=StartupName))+geom_bar(stat="identity",position="identity",width=0.5)+facet_wrap(~Qtr,scales=c("free"))+scale_y_continuous(labels=scales::comma)+theme(legend.position="none",axis.text.x = element_text(angle=90,vjust=0.5),plot.title=element_text(color="blue",size=10,face="italic"))+labs(x="",y="Total Investment",title="Softbank Investments over the 3 years")+theme_fivethirtyeight()
+```
+
+
+## Tiger Global
+
+```{r,fig.width=9,fig.height=9,fig.align="center"}
+temp= star %>% filter(InvestorsName=="Tiger Global") %>% select(Qtr,StartupName,AmountInUSD) %>% ddply(.(Qtr,StartupName),summarise,TotalInvestment=sum(AmountInUSD))
+ggplot(temp,aes(x=StartupName,y=TotalInvestment,fill=StartupName))+geom_bar(stat="identity",position="identity",width=0.5)+facet_wrap(~Qtr,scales=c("free"))+scale_y_continuous(labels=scales::comma)+theme_fivethirtyeight()+theme(axis.text.x = element_text(angle=90,vjust=0.5),plot.title=element_text(color="blue",size=10,face="italic"))+labs(x="",y="Total Investment",title="Tiger Global Investments over the 3 years")
+```
+
+## Tencent Holdings
+
+```{r,fig.align="center",fig.width=5,fig.height=5}
+temp= star %>% filter(InvestorsName=="Tencent Holdings") %>% select(Qtr,StartupName,AmountInUSD) %>% ddply(.(Qtr,StartupName),summarise,TotalInvestment=sum(AmountInUSD))
+ggplot(temp,aes(x=StartupName,y=TotalInvestment,fill=StartupName))+geom_bar(stat="identity",position="identity",width=0.5)+facet_wrap(~Qtr,scales=c("free"))+scale_y_continuous(labels=scales::comma)+theme_fivethirtyeight()+theme(axis.text.x = element_text(angle=90,vjust=0.5),plot.title=element_text(color="blue",size=10,face="italic"))+labs(x="",y="Total Investment",title="Tencent Holdings Investments over the 3 years")
+```
+
+
+## Microsoft
+
+```{r,fig.align="center"}
+temp= star %>% filter(InvestorsName=="Microsoft") %>% select(Qtr,StartupName,AmountInUSD) %>% ddply(.(Qtr,StartupName),summarise,TotalInvestment=sum(AmountInUSD))
+ggplot(temp,aes(x=StartupName,y=TotalInvestment,fill=StartupName))+geom_bar(stat="identity",position="identity",width=0.3)+facet_wrap(~Qtr,scales=c("free"))+scale_y_continuous(labels=scales::comma)+theme_fivethirtyeight()+theme(axis.text.x = element_text(angle=90,vjust=0.5),plot.title=element_text(color="blue",size=10,face="italic"))+labs(x="",y="Total Investment",title="Microsoft Investments over the 3 years")
+```
+
+
+## eBay
+
+```{r}
+temp= star %>% filter(InvestorsName=="eBay") %>% select(Qtr,StartupName,AmountInUSD) %>% ddply(.(Qtr,StartupName),summarise,TotalInvestment=sum(AmountInUSD))
+ggplot(temp,aes(x=StartupName,y=TotalInvestment,fill=StartupName))+geom_bar(stat="identity",position="identity",width=0.3)+facet_wrap(~Qtr,scales=c("free"))+scale_y_continuous(labels=scales::comma)+theme_fivethirtyeight()+theme(axis.text.x = element_text(angle=90,vjust=0.5),plot.title=element_text(color="blue",size=10,face="italic"))+labs(x="",y="Total Investment",title="eBayInvestments over the 3 years")
+```
+
+
+# Conclusion
+
+> The year 2015 seems to be a boom period for startup investments but this has seen a downward trend during the entire 2016.Lot of factors can be attributed to this.
+
+> One event which shook up the Indian Ecosystem is the Demonitisation move by the government in Nov 2016.
+
+> This project has focused to analyse the dataset from differnt angles and has partly tried to find out the top players in the startup space as far as the investments are concerned.
+
+**Thank you for reading.**
